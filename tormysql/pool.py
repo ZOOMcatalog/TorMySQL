@@ -162,7 +162,7 @@ class ConnectionPool(object):
                         self._connections.append(connection)
                         break
 
-            if self._wait_connections and self._connections_count - 1 < self._max_connections:
+            if self._wait_connections and self._connections_count < self._max_connections:
                 wait_future, create_time = self._wait_connections.popleft()
                 wait_time = time.time() - create_time
                 if wait_time >= self._wait_connection_timeout:
@@ -246,21 +246,17 @@ class ConnectionPool(object):
 
     def continue_next_wait(self, connection):
         now = time.time()
-        while self._wait_connections:
+        if self._wait_connections:
             wait_future, create_time = self._wait_connections.popleft()
             wait_time = now - create_time
             if wait_time >= self._wait_connection_timeout:
                 self._wait_connection_timeout_futures.append((wait_future, wait_time))
-                continue
-            connection.used_time = now
-            self._loop.call_soon(wait_future.set_result, connection)
-            if self._wait_connection_timeout_futures:
                 self._loop.call_soon(self.do_wait_future_exception_timeout)
-            return True
-
-        if self._wait_connection_timeout_futures:
-            self._loop.call_soon(self.do_wait_future_exception_timeout)
-        return False
+                return False
+            else:
+                connection.used_time = now
+                self._loop.call_soon(wait_future.set_result, connection)
+                return True
 
     def do_wait_future_exception_timeout(self):
         while self._wait_connection_timeout_futures:
